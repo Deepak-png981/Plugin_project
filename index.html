@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+
+<body>
+
+    <button id="startButton">Start</button>
+    <button id="lowpassButton">Apply Lowpass Filter</button>
+    <button id="highpassButton">Apply Highpass Filter</button>
+    <button id="pitchButton">Apply Pitch Shift</button>
+    <button id="clipButton">Apply Clipping</button>
+    <button id="compressButton">Apply Compression</button>
+    <button id="reverbButton">Apply Reverb</button>
+    <button id="delayButton">Apply Delay</button>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        let audioContext = new AudioContext();
+        let source;
+        let filter;
+        let analyser;
+        let dataArray;
+        let canvas = document.getElementById('canvas');
+        let ctx = canvas.getContext('2d');
+
+        document.getElementById('startButton').addEventListener('click', () => {
+            fetch('./input.wav')
+                .then(response => response.arrayBuffer())
+                .then(arrayBuffer => audioContext.decodeAudioData(arrayBuffer))
+                .then(audioBuffer => {
+                    analyser = audioContext.createAnalyser();
+                    analyser.fftSize = 2048;
+
+                    source = audioContext.createBufferSource();
+                    source.buffer = audioBuffer;
+
+                    source.connect(analyser);
+                    analyser.connect(audioContext.destination);
+
+                    source.start();
+
+                    dataArray = new Uint8Array(analyser.frequencyBinCount);
+                    draw();
+                })
+                .catch(e => console.error(e));
+        });
+
+        document.getElementById('lowpassButton').addEventListener('click', () => {
+            applyFilter('lowpass', 1000);
+        });
+
+        document.getElementById('highpassButton').addEventListener('click', () => {
+            applyFilter('highpass', 2000);
+        });
+
+        document.getElementById('pitchButton').addEventListener('click', () => {
+            source.playbackRate.value = 1.5; // change the playback rate
+        });
+
+        document.getElementById('clipButton').addEventListener('click', () => {
+            let waveShaper = audioContext.createWaveShaper();
+            waveShaper.curve = new Float32Array([0, 1, 1, 0]); // change the curve as per the clipping requirement
+            source.connect(waveShaper);
+            waveShaper.connect(audioContext.destination);
+        });
+
+        document.getElementById('compressButton').addEventListener('click', () => {
+            let compressor = audioContext.createDynamicsCompressor();
+            source.connect(compressor);
+            compressor.connect(audioContext.destination);
+        });
+
+        document.getElementById('reverbButton').addEventListener('click', () => {
+            fetch('impulse_response_path') // use the path to your impulse response file
+                .then(response => response.arrayBuffer())
+                .then(arrayBuffer => audioContext.decodeAudioData(arrayBuffer))
+                .then(impulseResponse => {
+                    let convolver = audioContext.createConvolver();
+                    convolver.buffer = impulseResponse;
+                    source.connect(convolver);
+                    convolver.connect(audioContext.destination);
+                });
+        });
+
+        document.getElementById('delayButton').addEventListener('click', () => {
+            let delay = audioContext.createDelay();
+            delay.delayTime.value = 1; // delay time in seconds
+            source.connect(delay);
+            delay.connect(audioContext.destination);
+        });
+
+        function draw() {
+            requestAnimationFrame(draw);
+            analyser.getByteFrequencyData(dataArray);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            for (let i = 0; i < dataArray.length; i++) {
+                ctx.fillRect(i, canvas.height, 1, -dataArray[i]);
+            }
+        }
+
+        function applyFilter(type, frequency) {
+            // Disconnect the previous filter if it exists
+            if (filter) {
+                source.disconnect(filter);
+                filter.disconnect();
+            }
+
+            // Create a biquad filter
+            filter = audioContext.createBiquadFilter();
+            filter.type = type;
+            filter.frequency.value = frequency; // cutoff frequency
+
+            // Connect the source to the filter and the filter to the analyser
+            source.connect(filter);
+            filter.connect(analyser);
+        }
+    </script>
+
+</body>
+
+</html>
